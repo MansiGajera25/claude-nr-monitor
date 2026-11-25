@@ -33,7 +33,7 @@ jobs:
       - name: Install Claude Code and the nr-monitor plugin
         run: |
           npm install -g @anthropic-ai/claude-code
-          claude plugin marketplace add OWNER/claude-nr-monitor   # <-- your plugin repo
+          claude plugin marketplace add MansiGajera25/claude-nr-monitor   # <-- your plugin repo
           claude plugin install nr-monitor@nr-monitor-marketplace
 
       - name: Run the check

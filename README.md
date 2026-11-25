@@ -7,7 +7,7 @@ Includes its own MCP server (no dependencies) with tools for New Relic, Slack an
 ## Install (once per person)
 
 ```
-/plugin marketplace add OWNER/claude-nr-monitor
+/plugin marketplace add MansiGajera25/claude-nr-monitor
 /plugin install nr-monitor@nr-monitor-marketplace
 ```
 
