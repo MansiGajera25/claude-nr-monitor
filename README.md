@@ -37,6 +37,7 @@ Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
 | `DATABASE_URL_READONLY` | Optional. A read-only database user |
 | `NR_GITHUB_DISPATCH_TOKEN` | Only for `nr_setup_alerts` to connect alerts to GitHub (fine-grained token, one repo, "Contents: read and write") |
 | `CLAUDE_CODE_OAUTH_TOKEN` | GitHub Actions only. From `claude setup-token` on the monitor's Claude account |
+| `PLUGIN_REPO_TOKEN` | GitHub Actions only, while this plugin repo is private: fine-grained token with "Contents: read" on this plugin repo |
 
 ## Automatic runs (no server)
 

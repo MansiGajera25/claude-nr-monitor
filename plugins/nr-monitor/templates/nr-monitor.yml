@@ -31,7 +31,12 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code and the nr-monitor plugin
+        env:
+          PLUGIN_REPO_TOKEN: ${{ secrets.PLUGIN_REPO_TOKEN }}   # only if the plugin repo is private
         run: |
+          if [ -n "$PLUGIN_REPO_TOKEN" ]; then
+            git config --global url."https://x-access-token:${PLUGIN_REPO_TOKEN}@github.com/MansiGajera25/claude-nr-monitor".insteadOf "https://github.com/MansiGajera25/claude-nr-monitor"
+          fi
           npm install -g @anthropic-ai/claude-code
           claude plugin marketplace add MansiGajera25/claude-nr-monitor   # <-- your plugin repo
           claude plugin install nr-monitor@nr-monitor-marketplace
