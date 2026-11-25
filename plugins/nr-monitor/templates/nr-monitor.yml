@@ -1,0 +1,53 @@
+# nr-monitor: runs the Claude New Relic monitor every 12 hours and when a New Relic alert arrives.
+# Copy to .github/workflows/nr-monitor.yml. Repo secrets needed: see the plugin README.
+name: nr-monitor
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"          # every 12 hours (UTC)
+  repository_dispatch:
+    types: [nr-alert]               # sent by New Relic (nr_setup_alerts creates the webhook)
+  workflow_dispatch:                # "Run workflow" button for a manual test
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nr-monitor                 # one run at a time per repo; alerts during a run wait
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code and the nr-monitor plugin
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude plugin marketplace add OWNER/claude-nr-monitor   # <-- your plugin repo
+          claude plugin install nr-monitor@nr-monitor-marketplace
+
+      - name: Run the check
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_RELIC_USER_API_KEY: ${{ secrets.NEW_RELIC_USER_API_KEY }}
+          NEW_RELIC_ACCOUNT_ID: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
+          NEW_RELIC_APP_NAME: ${{ secrets.NEW_RELIC_APP_NAME }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          DATABASE_URL_READONLY: ${{ secrets.DATABASE_URL_READONLY }}
+          ALERT: ${{ github.event.client_payload.alert }}
+        run: |
+          git config user.name "nr-monitor[bot]"
+          git config user.email "nr-monitor@users.noreply.github.com"
+          claude -p "/nr-monitor:check ${ALERT}" --permission-mode bypassPermissions --max-turns 200

@@ -1,0 +1,65 @@
+# nr-monitor — Claude Code plugin
+
+A Claude Code agent that watches your app in New Relic. When it finds a real bug, it fixes it, tests the fix on a safe local copy with dummy data, opens a PR and posts the result to Slack with before/after proof. It never merges.
+
+Includes its own MCP server (no dependencies) with tools for New Relic, Slack and a read-only database. Works in any project, from any Claude account, in VS Code, Cursor or the terminal.
+
+## Install (once per person)
+
+```
+/plugin marketplace add OWNER/claude-nr-monitor
+/plugin install nr-monitor@nr-monitor-marketplace
+```
+
+## Set up a project (once per project)
+
+```
+/nr-monitor:setup
+```
+It checks your settings, writes the Monitoring section in `CLAUDE.md`, creates strict New Relic alerts (asks first) and, if you want, adds the GitHub workflow for automatic runs.
+
+## Use
+
+```
+/nr-monitor:check                      # last 12 hours
+/nr-monitor:check 1 hour ago           # any window
+/nr-monitor:check <alert details>      # one alert
+```
+
+## Settings
+
+Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
+
+| Setting | Needed for |
+|---|---|
+| `NEW_RELIC_USER_API_KEY`, `NEW_RELIC_ACCOUNT_ID`, `NEW_RELIC_APP_NAME` | Required. `NEW_RELIC_REGION=EU` for EU accounts |
+| `SLACK_BOT_TOKEN` (`chat:write`, `files:write`), `SLACK_CHANNEL_ID` | Slack report |
+| `DATABASE_URL_READONLY` | Optional. A read-only database user |
+| `NR_GITHUB_DISPATCH_TOKEN` | Only for `nr_setup_alerts` to connect alerts to GitHub (fine-grained token, one repo, "Contents: read and write") |
+| `CLAUDE_CODE_OAUTH_TOKEN` | GitHub Actions only. From `claude setup-token` on the monitor's Claude account |
+
+## Automatic runs (no server)
+
+`templates/nr-monitor.yml` → `.github/workflows/nr-monitor.yml` in the project:
+- every 12 hours;
+- when a High/Critical alert from the `Claude-Critical: <app>` policy fires (New Relic → GitHub `repository_dispatch`);
+- by hand with **Run workflow**.
+
+## MCP tools
+
+| Tool | What it does |
+|---|---|
+| `config_check` | Which settings are set (names only) |
+| `nr_signals` | Errors, error logs, error rate and p95 for a window |
+| `nr_error_details` | Stack traces and log lines |
+| `nr_query` | Any NRQL |
+| `nr_setup_alerts` | Creates the strict alert policy and, optionally, the alert → GitHub webhook |
+| `slack_post` | Report + proof files |
+| `db_query` | One read-only SQL statement |
+
+## Safety
+
+- Dummy data only when testing; never real emails, SMS or outside services.
+- Database access is read-only (statement check + read-only transaction + timeout).
+- Keys are read from `.env` / secrets and never printed.
+- Never merges a PR.

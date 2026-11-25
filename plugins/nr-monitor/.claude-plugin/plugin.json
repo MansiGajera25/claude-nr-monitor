@@ -1,0 +1,8 @@
+{
+  "name": "nr-monitor",
+  "version": "1.0.0",
+  "description": "New Relic monitor agent: finds real bugs, fixes them, tests on a safe local copy and opens a PR with before/after proof. Includes its own MCP (New Relic, Slack, read-only DB).",
+  "author": {
+    "name": "Team"
+  }
+}
