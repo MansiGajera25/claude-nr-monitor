@@ -67,7 +67,7 @@ Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
 
 ## Automatic runs with the nr-monitor service (recommended)
 
-A very small server (`service/server.mjs`, no dependencies) receives New Relic alert webhooks and starts Claude for the right project. No Claude token is needed: Claude is logged in once on that machine. **No project code is kept on the server**: each run downloads the project into a temporary folder, Claude fixes and tests it there, and the folder is deleted afterwards.
+A very small server (`service/server.js`, no dependencies) receives New Relic alert webhooks and starts Claude for the right project. No Claude token is needed: Claude is logged in once on that machine. **No project code is kept on the server**: each run downloads the project into a temporary folder, Claude fixes and tests it there, and the folder is deleted afterwards.
 
 ```
 New Relic alert → POST https://<service>/alert → service picks the project
@@ -81,11 +81,11 @@ Every 12 hours  → the same for every project
 1. Install Node 18+, git, `gh`, Claude Code. Log in once: `claude` (email + OTP) and `gh auth login` then `gh auth setup-git` (so git can download private repos and push fixes).
 2. Install the plugin (the 2 commands above).
 3. `git clone` this repo, `cp service/projects.example.json service/projects.json`, set a long random `secret`.
-4. Start it: `node service/server.mjs` (keep it running with pm2 or systemd), reachable over HTTPS (e.g. behind a reverse proxy). Check: `curl https://<service>/health`.
+4. Start it: `node service/server.js` (keep it running with pm2 or systemd), reachable over HTTPS (e.g. behind a reverse proxy). Check: `curl https://<service>/health`.
 
 **Add a project:**
 1. In `service/projects.json`, one entry: `app` (New Relic app name), `repo` (`owner/repo`), `branch`, `install` (e.g. `npm ci`). Restart the service.
 2. On the service machine, create `service/envs/<app>.env` with that project's settings (New Relic, Slack, optional read-only DB). Never committed.
 3. On your computer, in the project's `.env`: `NR_MONITOR_SERVICE_URL=https://<service>` and `NR_MONITOR_SECRET=<same secret>`, then run `/nr-monitor:setup`. It connects that project's alerts to the service.
 
-**Behaviour:** one run at a time (others wait in a queue); only High/Critical; repeats of the same New Relic issue ignored for 6 h; posts to Slack if a run fails (for example, the Claude login expired). Logs: `service/logs/`. Test without downloading or starting Claude: `NR_MONITOR_DRY_RUN=1 node service/server.mjs`.
+**Behaviour:** one run at a time (others wait in a queue); only High/Critical; repeats of the same New Relic issue ignored for 6 h; posts to Slack if a run fails (for example, the Claude login expired). Logs: `service/logs/`. Test without downloading or starting Claude: `NR_MONITOR_DRY_RUN=1 node service/server.js`.

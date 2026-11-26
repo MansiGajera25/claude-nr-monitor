@@ -3,7 +3,7 @@
 // Claude Code (with the nr-monitor plugin) in the right project folder. Also runs the 12-hour check.
 // Zero dependencies (Node 18+). Claude must be logged in once on this machine (`claude` → OTP).
 //
-//   node service/server.mjs   (config: service/projects.json; per-project settings: service/envs/<app>.env)
+//   node service/server.js   (config: service/projects.json; per-project settings: service/envs/<app>.env)
 // Each run downloads the project into a temporary folder, runs Claude there, and deletes it after.
 //
 // Endpoints:
