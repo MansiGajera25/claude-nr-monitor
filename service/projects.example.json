@@ -6,6 +6,6 @@
   "maxTurns": 200,
   "projects": [
     { "app": "Two-way-sync-of-customer-and-contact-records", "dir": "/srv/projects/two-way-sync", "branch": "main" },
-    { "app": "Winchurch", "dir": "/srv/projects/winchurch", "branch": "main" }
+    { "app": "Example-App", "dir": "/srv/projects/example-app", "branch": "main" }
   ]
 }
