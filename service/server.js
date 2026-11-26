@@ -5,7 +5,7 @@
 // for the right project. Every run downloads the project into a temporary folder and deletes it after.
 // It also checks every project every 12 hours. No dependencies: Node 18+ only.
 //
-//   node service/server.js
+//   cd service && npm start        (or: npm run dry-run — no download, no Claude)
 //
 // Files:
 //   src/config.js   read projects.json, find a project, find its settings file
