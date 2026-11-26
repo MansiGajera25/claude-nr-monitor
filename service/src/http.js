@@ -29,9 +29,17 @@ async function handleAlert(config, req, res) {
     return sendJson(res, 401, { error: 'bad secret' });
   }
 
+  let body;
+  try {
+    body = await readBody(req);
+  } catch {
+    res.setHeader('Connection', 'close');
+    return sendJson(res, 413, { error: `body larger than ${MAX_BODY_BYTES} bytes` });
+  }
+
   let alert;
   try {
-    alert = JSON.parse(await readBody(req));
+    alert = JSON.parse(body);
   } catch {
     return sendJson(res, 400, { error: 'bad json' });
   }
@@ -53,14 +61,21 @@ function isCorrectSecret(expected, received) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+// Reads the request body. Rejects (and stops keeping data) once it is larger than MAX_BODY_BYTES.
 function readBody(req) {
   return new Promise((resolve, reject) => {
-    let body = '';
+    const chunks = [];
+    let size = 0;
     req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > MAX_BODY_BYTES) req.destroy(new Error('body too large'));
+      size += chunk.length; // real bytes, not characters
+      if (size > MAX_BODY_BYTES) {
+        req.removeAllListeners('data');
+        req.resume(); // throw the rest away instead of storing it
+        return reject(new Error('body too large'));
+      }
+      chunks.push(chunk);
     });
-    req.on('end', () => resolve(body));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
 }

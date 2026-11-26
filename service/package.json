@@ -2,9 +2,12 @@
   "name": "nr-monitor-service",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
-    "dry-run": "NR_MONITOR_DRY_RUN=1 node server.js"
+    "dry-run": "NR_MONITOR_DRY_RUN=1 node server.js",
+    "test": "node --test test/*.test.js"
   }
 }
