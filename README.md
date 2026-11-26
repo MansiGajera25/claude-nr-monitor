@@ -64,3 +64,24 @@ Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
 - Database access is read-only (statement check + read-only transaction + timeout).
 - Keys are read from `.env` / secrets and never printed.
 - Never merges a PR.
+
+## Automatic runs with the nr-monitor service (recommended)
+
+A very small server (`service/server.mjs`, no dependencies) receives New Relic alert webhooks and starts Claude in the right project folder. No Claude token is needed: Claude is logged in once on that machine.
+
+```
+New Relic alert → POST https://<service>/alert → service picks the project → claude -p "/nr-monitor:check <alert>" → fix → PR → Slack
+Every 12 hours  → service runs the check for every project
+```
+
+**On the service machine (once):**
+1. Install Node 18+, git, `gh` (`gh auth login`), Claude Code, and log in: run `claude` once (email + OTP).
+2. Install the plugin (the 2 commands above).
+3. Clone each project into a folder and add its `.env`.
+4. `cp service/projects.example.json service/projects.json`, set a long random `secret` and one entry per project (`app` = New Relic app name, `dir` = folder).
+5. Start it: `node service/server.mjs` (keep it running with pm2 or systemd). It must be reachable from the internet over HTTPS, e.g. behind a reverse proxy.
+6. Check: `curl https://<service>/health`.
+
+**Per project:** add to its `.env`: `NR_MONITOR_SERVICE_URL=https://<service>` and `NR_MONITOR_SECRET=<same secret>`, then run `/nr-monitor:setup`. It connects that project's alerts to the service.
+
+**Behaviour:** one run at a time (others wait in a queue); only High/Critical; repeats of the same New Relic issue ignored for 6 h; skips a project folder with uncommitted changes; posts to Slack if a run fails (for example, the Claude login expired). Logs: `service/logs/`. Test without starting Claude: `NR_MONITOR_DRY_RUN=1 node service/server.mjs`.

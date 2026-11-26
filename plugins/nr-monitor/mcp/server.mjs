@@ -84,7 +84,7 @@ async function nrErrorDetails({ window, app, limit }) {
 }
 
 // Creates (once) a strict alert policy for the app and, optionally, a webhook that starts the agent.
-async function nrSetupAlerts({ app, error_rate_critical = 10, error_rate_high = 3, github_repo }) {
+async function nrSetupAlerts({ app, error_rate_critical = 10, error_rate_high = 3, github_repo, service_url }) {
   need('NEW_RELIC_ACCOUNT_ID');
   const A = appName(app), acc = Number(env('NEW_RELIC_ACCOUNT_ID'));
   const policyName = `Claude-Critical: ${A}`;
@@ -119,37 +119,49 @@ async function nrSetupAlerts({ app, error_rate_critical = 10, error_rate_high = 
     }
   }
 
-  // Optional: High/Critical alerts from this policy start the GitHub Action in github_repo.
-  if (github_repo) {
+  // Optional: High/Critical alerts from this policy go to the nr-monitor service (preferred) or start a GitHub Action.
+  const connect = async ({ destName, url, auth, headers, payload, what }) => {
+    const dests = (await nerdgraph(`query($a:Int!){actor{account(id:$a){aiNotifications{destinations{entities{id name}}}}}}`, { a: acc })).actor.account.aiNotifications.destinations.entities;
+    if (dests.some((d) => d.name === destName)) return done.push(`Webhook "${destName}" already exists — not changed.`);
+    const dest = (await nerdgraph(`mutation($a:Int!,$d:AiNotificationsDestinationInput!){aiNotificationsCreateDestination(accountId:$a,destination:$d){destination{id name} error{... on AiNotificationsResponseError{description}}}}`, {
+      a: acc, d: { name: destName, type: 'WEBHOOK', properties: [{ key: 'url', value: url }], ...(auth ? { auth } : {}) },
+    })).aiNotificationsCreateDestination.destination;
+    const ch = (await nerdgraph(`mutation($a:Int!,$c:AiNotificationsChannelInput!){aiNotificationsCreateChannel(accountId:$a,channel:$c){channel{id} error{... on AiNotificationsResponseError{description}}}}`, {
+      a: acc, c: { name: `Claude agent (${A})`, type: 'WEBHOOK', product: 'IINT', destinationId: dest.id,
+        properties: [{ key: 'payload', value: payload }, { key: 'headers', value: JSON.stringify(headers) }] },
+    })).aiNotificationsCreateChannel.channel;
+    await nerdgraph(`mutation($a:Int!,$w:AiWorkflowsCreateWorkflowInput!){aiWorkflowsCreateWorkflow(accountId:$a,createWorkflowData:$w){workflow{id} errors{description}}}`, {
+      a: acc, w: { name: `Claude agent: ${A} (High + Critical)`, workflowEnabled: true, destinationsEnabled: true, mutingRulesHandling: 'DONT_NOTIFY_FULLY_MUTED_ISSUES',
+        issuesFilter: { name: 'claude', type: 'FILTER', predicates: [
+          { attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: [String(policy.id)] },
+          { attribute: 'priority', operator: 'EQUAL', values: ['CRITICAL', 'HIGH'] }] },
+        destinationConfigurations: [{ channelId: ch.id, notificationTriggers: ['ACTIVATED', 'PRIORITY_CHANGED'] }] },
+    });
+    done.push(`Created webhook + workflow: High/Critical alerts for ${A} ${what}.`);
+  };
+
+  const serviceUrl = service_url || env('NR_MONITOR_SERVICE_URL');
+  if (serviceUrl) {
+    if (!/^https?:\/\/[^\s]+$/.test(serviceUrl)) throw new Error('service_url must be the service address, e.g. https://monitor.example.com');
+    if (!env('NR_MONITOR_SECRET')) done.push('Service webhook NOT created: set NR_MONITOR_SECRET (the same secret as in the service config), then run again.');
+    else await connect({
+      destName: `Claude agent → service (${A})`,
+      url: serviceUrl.replace(/\/+$/, '') + '/alert',
+      headers: { 'x-nr-monitor-secret': env('NR_MONITOR_SECRET') },
+      payload: `{"app":${JSON.stringify(A)},"priority":"{{priority}}","state":"{{state}}","issueId":"{{issueId}}","condition":"{{#each accumulations.conditionName}}{{escape this}} {{/each}}","title":"{{escape issueTitle}}","link":"{{issuePageUrl}}"}`,
+      what: `go to the nr-monitor service at ${serviceUrl}`,
+    });
+  } else if (github_repo) {
     if (!/^[\w.-]+\/[\w.-]+$/.test(github_repo)) throw new Error('github_repo must look like owner/repo');
-    if (!env('NR_GITHUB_DISPATCH_TOKEN')) {
-      done.push('Webhook NOT created: set NR_GITHUB_DISPATCH_TOKEN (a GitHub fine-grained token with "Contents: read and write" on that repo only), then run again.');
-    } else {
-      const destName = `Claude agent → ${github_repo}`;
-      const dests = (await nerdgraph(`query($a:Int!){actor{account(id:$a){aiNotifications{destinations{entities{id name}}}}}}`, { a: acc })).actor.account.aiNotifications.destinations.entities;
-      let dest = dests.find((d) => d.name === destName);
-      if (dest) done.push(`Webhook "${destName}" already exists.`);
-      else {
-        dest = (await nerdgraph(`mutation($a:Int!,$d:AiNotificationsDestinationInput!){aiNotificationsCreateDestination(accountId:$a,destination:$d){destination{id name} error{... on AiNotificationsResponseError{description}}}}`, {
-          a: acc, d: { name: destName, type: 'WEBHOOK',
-            properties: [{ key: 'url', value: `https://api.github.com/repos/${github_repo}/dispatches` }],
-            auth: { type: 'TOKEN', token: { prefix: 'Bearer', token: env('NR_GITHUB_DISPATCH_TOKEN') } } },
-        })).aiNotificationsCreateDestination.destination;
-        const payload = `{"event_type":"nr-alert","client_payload":{"alert":"New Relic alert. Priority: {{priority}}. Condition: {{#each accumulations.conditionName}}{{escape this}} {{/each}}. Title: {{escape issueTitle}}. State: {{state}}. Issue link: {{issuePageUrl}}"}}`;
-        const ch = (await nerdgraph(`mutation($a:Int!,$c:AiNotificationsChannelInput!){aiNotificationsCreateChannel(accountId:$a,channel:$c){channel{id} error{... on AiNotificationsResponseError{description}}}}`, {
-          a: acc, c: { name: `Claude agent (${A})`, type: 'WEBHOOK', product: 'IINT', destinationId: dest.id,
-            properties: [{ key: 'payload', value: payload }, { key: 'headers', value: JSON.stringify({ Accept: 'application/vnd.github+json' }) }] },
-        })).aiNotificationsCreateChannel.channel;
-        await nerdgraph(`mutation($a:Int!,$w:AiWorkflowsCreateWorkflowInput!){aiWorkflowsCreateWorkflow(accountId:$a,createWorkflowData:$w){workflow{id} errors{description}}}`, {
-          a: acc, w: { name: `Claude agent: ${A} (High + Critical)`, workflowEnabled: true, destinationsEnabled: true, mutingRulesHandling: 'DONT_NOTIFY_FULLY_MUTED_ISSUES',
-            issuesFilter: { name: 'claude', type: 'FILTER', predicates: [
-              { attribute: 'labels.policyIds', operator: 'EXACTLY_MATCHES', values: [String(policy.id)] },
-              { attribute: 'priority', operator: 'EQUAL', values: ['CRITICAL', 'HIGH'] }] },
-            destinationConfigurations: [{ channelId: ch.id, notificationTriggers: ['ACTIVATED', 'PRIORITY_CHANGED'] }] },
-        });
-        done.push(`Created webhook + workflow: High/Critical alerts for ${A} start the "nr-monitor" GitHub Action in ${github_repo}.`);
-      }
-    }
+    if (!env('NR_GITHUB_DISPATCH_TOKEN')) done.push('GitHub webhook NOT created: set NR_GITHUB_DISPATCH_TOKEN (a GitHub fine-grained token with "Contents: read and write" on that repo only), then run again.');
+    else await connect({
+      destName: `Claude agent → ${github_repo}`,
+      url: `https://api.github.com/repos/${github_repo}/dispatches`,
+      auth: { type: 'TOKEN', token: { prefix: 'Bearer', token: env('NR_GITHUB_DISPATCH_TOKEN') } },
+      headers: { Accept: 'application/vnd.github+json' },
+      payload: `{"event_type":"nr-alert","client_payload":{"alert":"New Relic alert. Priority: {{priority}}. Condition: {{#each accumulations.conditionName}}{{escape this}} {{/each}}. Title: {{escape issueTitle}}. State: {{state}}. Issue link: {{issuePageUrl}}"}}`,
+      what: `start the "nr-monitor" GitHub Action in ${github_repo}`,
+    });
   }
   return done.join('\n');
 }
@@ -204,7 +216,7 @@ function dbQuery({ sql }) {
 
 // ---------- settings check ----------
 function configCheck() {
-  const keys = ['NEW_RELIC_USER_API_KEY', 'NEW_RELIC_ACCOUNT_ID', 'NEW_RELIC_APP_NAME', 'NEW_RELIC_REGION', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID', 'DATABASE_URL_READONLY', 'NR_GITHUB_DISPATCH_TOKEN'];
+  const keys = ['NEW_RELIC_USER_API_KEY', 'NEW_RELIC_ACCOUNT_ID', 'NEW_RELIC_APP_NAME', 'NEW_RELIC_REGION', 'SLACK_BOT_TOKEN', 'SLACK_CHANNEL_ID', 'DATABASE_URL_READONLY', 'NR_MONITOR_SERVICE_URL', 'NR_MONITOR_SECRET', 'NR_GITHUB_DISPATCH_TOKEN'];
   return keys.map((k) => `${env(k) ? 'set    ' : 'missing'}  ${k}`).join('\n') + '\n(values are never shown)';
 }
 
@@ -218,8 +230,8 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { window: str('e.g. "1 hour ago"'), app: str('app name'), limit: { type: 'number' } } }, run: nrErrorDetails },
   { name: 'nr_query', description: 'Run any NRQL query (read only) on the configured New Relic account.',
     inputSchema: { type: 'object', properties: { nrql: str('NRQL query') }, required: ['nrql'] }, run: ({ nrql: s }) => nrql(s) },
-  { name: 'nr_setup_alerts', description: 'One-time: create the strict "Claude-Critical: <app>" alert policy (error rate + fatal logs) and, if github_repo is given and NR_GITHUB_DISPATCH_TOKEN is set, a webhook so High/Critical alerts start the nr-monitor GitHub Action. Safe to run again (skips what exists).',
-    inputSchema: { type: 'object', properties: { app: str('app name'), error_rate_critical: { type: 'number', description: 'default 10 (%)' }, error_rate_high: { type: 'number', description: 'default 3 (%)' }, github_repo: str('owner/repo to start on alerts (optional)') } }, run: nrSetupAlerts },
+  { name: 'nr_setup_alerts', description: 'One-time: create the strict "Claude-Critical: <app>" alert policy (error rate + fatal logs) and a webhook so High/Critical alerts start the agent: to the nr-monitor service (service_url or NR_MONITOR_SERVICE_URL, plus NR_MONITOR_SECRET), or else to a GitHub Action (github_repo + NR_GITHUB_DISPATCH_TOKEN). Safe to run again (skips what exists).',
+    inputSchema: { type: 'object', properties: { app: str('app name'), error_rate_critical: { type: 'number', description: 'default 10 (%)' }, error_rate_high: { type: 'number', description: 'default 3 (%)' }, github_repo: str('owner/repo to start on alerts (optional)'), service_url: str('nr-monitor service address, e.g. https://monitor.example.com (optional)') } }, run: nrSetupAlerts },
   { name: 'slack_post', description: 'Post the report to the Slack results channel (SLACK_CHANNEL_ID), optionally with proof files attached (absolute paths).',
     inputSchema: { type: 'object', properties: { text: str('Slack mrkdwn text'), files: { type: 'array', items: { type: 'string' } } }, required: ['text'] }, run: slackPost },
   { name: 'db_query', description: 'Run ONE read-only SQL statement on the database (DATABASE_URL_READONLY, read-only transaction, 10 s timeout, max 200 rows).',
