@@ -89,3 +89,5 @@ Every 12 hours  → the same for every project
 3. On your computer, in the project's `.env`: `NR_MONITOR_SERVICE_URL=https://<service>` and `NR_MONITOR_SECRET=<same secret>`, then run `/nr-monitor:setup`. It connects that project's alerts to the service.
 
 **Behaviour:** one run at a time (others wait in a queue); only High/Critical; repeats of the same New Relic issue ignored for 6 h; posts to Slack if a run fails (for example, the Claude login expired). Logs: `service/logs/`. Test without downloading or starting Claude: `NR_MONITOR_DRY_RUN=1 node service/server.js`.
+
+**Code layout** (`service/`): `server.js` starts everything; `src/config.js` settings, `src/http.js` web endpoints, `src/alerts.js` which alerts count, `src/queue.js` one run at a time, `src/runner.js` download → Claude → delete, `src/notify.js` Slack warning on failure, `src/logger.js` logs.
