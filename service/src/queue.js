@@ -12,14 +12,17 @@ export function setupQueue({ run, onError }) {
   onFailure = onError;
 }
 
-/** Adds a job ({ app, kind, alertText? }). The same app + kind is never queued twice. */
+/** Adds a job ({ app, kind, alertText? }). The same app + kind is never queued twice. Alerts jump ahead of scheduled checks. */
 export function addJob(job) {
   const alreadyWaiting = waiting.some((other) => other.app === job.app && other.kind === job.kind);
   if (alreadyWaiting) {
     log(`skip: ${job.app} (${job.kind}) is already waiting`);
     return;
   }
-  waiting.push(job);
+  // Alerts go ahead of scheduled checks (but stay behind earlier alerts). Scheduled checks go to the end.
+  const firstScheduled = waiting.findIndex((other) => other.kind !== 'alert');
+  if (job.kind === 'alert' && firstScheduled !== -1) waiting.splice(firstScheduled, 0, job);
+  else waiting.push(job);
   log(`queued: ${job.app} (${job.kind}) — ${waiting.length} waiting`);
   startNext();
 }
