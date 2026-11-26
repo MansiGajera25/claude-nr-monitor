@@ -3,14 +3,16 @@
 // Claude Code (with the nr-monitor plugin) in the right project folder. Also runs the 12-hour check.
 // Zero dependencies (Node 18+). Claude must be logged in once on this machine (`claude` → OTP).
 //
-//   node service/server.mjs            (config: service/projects.json, see projects.example.json)
+//   node service/server.mjs   (config: service/projects.json; per-project settings: service/envs/<app>.env)
+// Each run downloads the project into a temporary folder, runs Claude there, and deletes it after.
 //
 // Endpoints:
 //   POST /alert   New Relic webhook. Header `x-nr-monitor-secret` must match the config secret.
 //                 Body: {"app":"<New Relic app name>","priority":"CRITICAL","condition":"…","title":"…","link":"…","issueId":"…"}
 //   GET  /health  {"ok":true,"queue":n,"running":"<app>|null"}
 import { createServer } from 'node:http';
-import { readFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, appendFileSync, mkdirSync, mkdtempSync, rmSync, copyFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { spawn, execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +28,10 @@ const EVERY_H = Number(cfg.scheduleHours ?? 12);
 const LOG_DIR = cfg.logDir || join(here, 'logs');
 mkdirSync(LOG_DIR, { recursive: true });
 if (!SECRET || SECRET.length < 16) throw new Error('Set a secret of at least 16 characters (config "secret" or NR_MONITOR_SECRET).');
+for (const p of cfg.projects) {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(p.repo || '')) throw new Error(`Project "${p.app}": "repo" must look like owner/repo.`);
+}
+setTimeout(() => cfg.projects.filter((p) => !existsSync(envFileOf(p))).forEach((p) => log(`warning: no settings file for ${p.app} — create ${envFileOf(p)}`)));
 
 const log = (msg) => {
   const line = `${new Date().toISOString()} ${msg}`;
@@ -59,24 +65,30 @@ function runClaude(job) {
   const p = projectFor(job.app);
   const prompt = job.kind === 'alert' ? `/nr-monitor:check ${job.alertText}` : `/nr-monitor:check ${EVERY_H} hours ago`;
   const args = ['-p', prompt, '--permission-mode', 'bypassPermissions', '--max-turns', String(cfg.maxTurns ?? 200)];
-  log(`start: ${job.app} in ${p.dir} — claude ${JSON.stringify(prompt)}`);
-  if (DRY_RUN) { log('dry run: Claude not started'); return Promise.resolve(); }
+  log(`start: ${job.app} (${p.repo}) — claude ${JSON.stringify(prompt)}`);
+  if (DRY_RUN) { log('dry run: nothing downloaded, Claude not started'); return Promise.resolve(); }
 
-  // Fresh, clean main before each run. Never touches uncommitted work: stops if the folder is dirty.
-  const git = (...a) => execFileSync('git', a, { cwd: p.dir, encoding: 'utf8' }).trim();
-  if (git('status', '--porcelain', '--untracked-files=no')) throw new Error(`${p.dir} has uncommitted changes — run skipped`);
-  git('checkout', '-q', p.branch || 'main');
-  git('pull', '-q', '--ff-only');
+  // Download -> fix -> delete: a fresh temporary copy for every run, removed afterwards.
+  const work = mkdtempSync(join(tmpdir(), 'nr-monitor-'));
+  const dir = join(work, 'repo');
+  const cleanup = () => { rmSync(work, { recursive: true, force: true }); log(`deleted temporary copy of ${job.app}`); };
+  try {
+    execFileSync('git', ['clone', '-q', '--depth', '50', '--branch', p.branch || 'main', `https://github.com/${p.repo}.git`, dir], { stdio: 'pipe' });
+    copyFileSync(envFileOf(p), join(dir, '.env'));
+    if (p.install) execFileSync('bash', ['-c', p.install], { cwd: dir, stdio: 'pipe', timeout: 15 * 60_000 });
+  } catch (e) { cleanup(); throw new Error(`could not prepare ${p.repo}: ${String(e.stderr || e.message).slice(0, 300)}`); }
+  log(`downloaded ${p.repo} to a temporary folder`);
 
   const out = join(LOG_DIR, `${job.app.replace(/[^\w.-]/g, '_')}-${Date.now()}.log`);
   return new Promise((resolve, reject) => {
-    const child = spawn('claude', args, { cwd: p.dir, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('claude', args, { cwd: dir, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
     const timer = setTimeout(() => { child.kill('SIGTERM'); }, (cfg.timeoutMinutes ?? 45) * 60_000);
     child.stdout.on('data', (d) => appendFileSync(out, d));
     child.stderr.on('data', (d) => appendFileSync(out, d));
     child.on('close', (code) => {
       clearTimeout(timer);
       log(`done: ${job.app} exit ${code} — log ${out}`);
+      cleanup();
       if (code === 0) return resolve();
       const tail = readFileSync(out, 'utf8').slice(-400);
       reject(new Error(/log ?in|login|auth|unauthori[sz]ed/i.test(tail) ? 'Claude is not logged in on the service machine — run `claude` there and log in again.' : `claude exited ${code}`));
@@ -84,11 +96,14 @@ function runClaude(job) {
   });
 }
 
-// Tell the team in Slack when a run fails (e.g. Claude login expired). Uses the project's .env Slack settings.
+// Each project's settings live on the service machine only: service/envs/<app>.env (never in git).
+const envFileOf = (p) => p.envFile || join(here, 'envs', `${p.app}.env`);
+
+// Tell the team in Slack when a run fails (e.g. Claude login expired). Uses that project's Slack settings.
 async function notifyFailure(job, reason) {
   try {
     const p = projectFor(job.app);
-    const env = Object.fromEntries(readFileSync(join(p.dir, '.env'), 'utf8').split('\n')
+    const env = Object.fromEntries(readFileSync(envFileOf(p), 'utf8').split('\n')
       .map((l) => l.match(/^\s*([A-Z0-9_]+)\s*=\s*"?(.*?)"?\s*$/)).filter(Boolean).map((m) => [m[1], m[2]]));
     if (!env.SLACK_BOT_TOKEN || !env.SLACK_CHANNEL_ID) return;
     await fetch('https://slack.com/api/chat.postMessage', {

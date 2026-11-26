@@ -5,7 +5,7 @@
   "timeoutMinutes": 45,
   "maxTurns": 200,
   "projects": [
-    { "app": "Two-way-sync-of-customer-and-contact-records", "dir": "/srv/projects/two-way-sync", "branch": "main" },
-    { "app": "Example-App", "dir": "/srv/projects/example-app", "branch": "main" }
+    { "app": "Two-way-sync-of-customer-and-contact-records", "repo": "MansiGajera25/Two-way-sync-of-customer-and-contact-records", "branch": "main", "install": "npm ci" },
+    { "app": "Example-App", "repo": "your-org/example-app", "branch": "main", "install": "npm ci" }
   ]
 }
