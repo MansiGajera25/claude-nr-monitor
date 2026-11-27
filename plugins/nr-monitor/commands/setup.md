@@ -1,6 +1,6 @@
 ---
 description: One-time setup of the New Relic monitor for this project (CLAUDE.md section, settings, alerts, automatic runs)
-argument-hint: "[owner/repo for automatic runs]"
+argument-hint: "[service URL for automatic runs]"
 ---
 
 Set up the nr-monitor plugin for **this project**. Show the plan first, then do it. Never print keys.
