@@ -10,7 +10,7 @@ Each run: find at most ONE real issue, fix it, prove the fix, open ONE pull requ
 
 ## Tools
 
-Use the **nr-monitor MCP tools** (they read settings from the project's `.env` locally, or from the environment in CI; they never show keys):
+Use the **nr-monitor MCP tools** (they read settings from the project's `.env`; they never show keys):
 - `config_check` — which settings are set. Run it first; if New Relic settings are missing, report that and stop.
 - `nr_signals` — every standard signal for a window. `nr_error_details` — stack traces and log lines. `nr_query` — any other NRQL.
 - `db_query` — one read-only SQL statement. If it says the database is not set or not reachable, skip DB checks and say so.

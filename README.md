@@ -28,23 +28,14 @@ It checks your settings, writes the Monitoring section in `CLAUDE.md`, creates s
 
 ## Settings
 
-Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
+Locally in the project's `.env`; on the service in `service/envs/<app>.env`. Never commit them.
 
 | Setting | Needed for |
 |---|---|
 | `NEW_RELIC_USER_API_KEY`, `NEW_RELIC_ACCOUNT_ID`, `NEW_RELIC_APP_NAME` | Required. `NEW_RELIC_REGION=EU` for EU accounts |
 | `SLACK_BOT_TOKEN` (`chat:write`, `files:write`), `SLACK_CHANNEL_ID` | Slack report |
 | `DATABASE_URL_READONLY` | Optional. A read-only database user |
-| `NR_GITHUB_DISPATCH_TOKEN` | Only for `nr_setup_alerts` to connect alerts to GitHub (fine-grained token, one repo, "Contents: read and write") |
-| `CLAUDE_CODE_OAUTH_TOKEN` | GitHub Actions only. From `claude setup-token` on the monitor's Claude account |
-| `PLUGIN_REPO_TOKEN` | GitHub Actions only, while this plugin repo is private: fine-grained token with "Contents: read" on this plugin repo |
-
-## Automatic runs (no server)
-
-`templates/nr-monitor.yml` → `.github/workflows/nr-monitor.yml` in the project:
-- every 12 hours;
-- when a High/Critical alert from the `Claude-Critical: <app>` policy fires (New Relic → GitHub `repository_dispatch`);
-- by hand with **Run workflow**.
+| `NR_MONITOR_SERVICE_URL`, `NR_MONITOR_SECRET` | Only when running `nr_setup_alerts` to connect alerts to the service |
 
 ## MCP tools
 
@@ -54,7 +45,7 @@ Locally in the project's `.env` (never commit it); in GitHub as repo secrets.
 | `nr_signals` | Errors, error logs, error rate and p95 for a window |
 | `nr_error_details` | Stack traces and log lines |
 | `nr_query` | Any NRQL |
-| `nr_setup_alerts` | Creates the strict alert policy and, optionally, the alert → GitHub webhook |
+| `nr_setup_alerts` | Creates the strict alert policy and, optionally, the alert → service webhook |
 | `slack_post` | Report + proof files |
 | `db_query` | One read-only SQL statement |
 
