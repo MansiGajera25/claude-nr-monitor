@@ -71,7 +71,7 @@ Every 12 hours  → the same for every project
 **On the service machine (once):**
 1. Install Node 18+, git, `gh`, Claude Code. Log in once: `claude` (email + OTP) and `gh auth login` then `gh auth setup-git` (so git can download private repos and push fixes).
 2. Install the plugin (the 2 commands above).
-3. `git clone` this repo, `cp service/projects.example.json service/projects.json`, set a long random `secret`.
+3. `git clone` this repo, `cp service/projects.example.json service/projects.json`. Set the webhook secret (16+ characters, e.g. `openssl rand -hex 24`) as the environment variable `NR_MONITOR_SECRET` when starting the service (or add `"secret": "..."` to projects.json).
 4. Start it: `cd service && npm start` (keep it running with pm2 or systemd), reachable over HTTPS (e.g. behind a reverse proxy). Check: `curl https://<service>/health`.
 
 **Add a project:**

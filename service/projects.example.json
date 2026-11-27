@@ -1,6 +1,5 @@
 {
   "port": 8787,
-  "secret": "change-me-to-a-long-random-string",
   "scheduleHours": 12,
   "timeoutMinutes": 45,
   "maxTurns": 200,
