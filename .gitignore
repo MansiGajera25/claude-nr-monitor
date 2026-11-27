@@ -2,3 +2,4 @@ service/projects.json
 service/logs/
 .env
 service/envs/
+.DS_Store
