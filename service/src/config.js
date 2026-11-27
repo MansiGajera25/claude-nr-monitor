@@ -51,3 +51,13 @@ export function envFileOf(project) {
 export function projectsWithoutEnvFile(config) {
   return config.projects.filter((project) => !existsSync(envFileOf(project))).map((project) => project.app);
 }
+
+/** Reads a project's settings file into { KEY: value }. */
+export function readProjectSettings(project) {
+  const settings = {};
+  for (const line of readFileSync(envFileOf(project), 'utf8').split('\n')) {
+    const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"?(.*?)"?\s*$/);
+    if (match) settings[match[1]] = match[2];
+  }
+  return settings;
+}
